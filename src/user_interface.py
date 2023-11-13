@@ -1,10 +1,5 @@
-# TODO: Add docstrings
-# TODO: Make catch more similar images
-# TODO: Make exit gracefully on full completion
-
 from enum import Enum
-from hashlib import sha256
-from multiprocessing import cpu_count, Event as MultiprocessingEvent, Lock, Manager, Process, Queue
+from multiprocessing import Queue
 from multiprocessing.managers import DictProxy
 from multiprocessing.synchronize import Event as MultiprocessingEventType, Lock as LockType
 from pathlib import Path
@@ -15,67 +10,6 @@ from threading import Thread
 from time import sleep
 from tkinter import *  # type: ignore
 from tkinter import filedialog, messagebox
-
-from imagehash import average_hash, dhash, phash
-
-
-def __backup(path: Path) -> None:
-	"""Make a backup of the target directory
-
-	Parameters
-	----------
-	path: Path to the target directory
-	"""
-	from shutil import copytree
-	backup_path = Path(str(path) + "_backup")
-	if not backup_path.exists():
-		copytree(path, backup_path)
-
-
-class Main:
-	def __init__(self) -> None:
-		self.duplicate_queue: Queue[tuple[str, Path, Path, str]] = Queue()
-		self.image_map: DictProxy[str, tuple[Path, str]] = Manager().dict()
-		self.discovery_complete_flag: MultiprocessingEventType = MultiprocessingEvent()
-		self.kill_flag: MultiprocessingEventType = MultiprocessingEvent()
-		self.stdout_lock: LockType = Lock()
-		self.user_interface = UserInterface(
-			self.duplicate_queue,
-			self.image_map,
-			self.discovery_complete_flag,
-			self.kill_flag,
-			self.stdout_lock
-		)
-		root_directory = self.user_interface.build()
-		__backup(root_directory)  # TODO: Remove this line
-		self.spawn_processes(root_directory)
-		self.process_monitor = Thread(target=self.monitor_processes)
-		self.process_monitor.start()
-		self.user_interface.start()
-
-	def monitor_processes(self) -> None:
-		for process in self.processes:
-			process.join()
-		self.discovery_complete_flag.set()
-		print("Discovery complete!")
-
-	def spawn_processes(self, root_directory: Path) -> None:
-		directory_queue: Queue[Path] = Queue()
-		directory_queue.put(root_directory)
-		self.processes: list[Process] = []
-		for _ in range(cpu_count() - 2):
-			self.processes.append(
-				DiscoveryWorker(
-					directory_queue,
-					self.duplicate_queue,
-					self.image_map,
-					self.kill_flag,
-					self.stdout_lock
-				)
-			)
-		print("Starting processes...")
-		for process in self.processes:
-			process.start()
 
 
 class UserInterface:
@@ -93,6 +27,7 @@ class UserInterface:
 		kill_flag: MultiprocessingEventType,
 		stdout_lock: LockType
 	) -> None:
+		self.blank_image = PILImage.open(Path(__file__).parent.parent / "resources/blank.jpg")
 		self.duplicate_queue = duplicate_queue
 		self.image_map = image_map
 		self.discovery_complete_flag = discovery_complete_flag
@@ -108,13 +43,34 @@ class UserInterface:
 		self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 		header = Label(self.window, text="Click image to KEEP")
-		self.basic_img = ImageTk.PhotoImage(PILImage.open(r"F:\white.jpg").resize((500, 500), PILImage.ADAPTIVE))
-		self.l_button = Button(self.window, command=lambda: self.button_callback(self.KeepSelection.LEFT), height=500, width=500, image=self.basic_img)
+
+		self.basic_img = ImageTk.PhotoImage(self.blank_image.resize((500, 500), PILImage.ADAPTIVE))
+		self.l_button = Button(
+			self.window,
+			command=lambda: self.button_callback(self.KeepSelection.LEFT),
+			height=500,
+			width=500,
+			image=self.basic_img
+		)
 		self.l_label = Label(self.window, text="\n")
-		self.r_button = Button(self.window, command=lambda: self.button_callback(self.KeepSelection.RIGHT), height=500, width=500, image=self.basic_img)
+		self.r_button = Button(
+			self.window,
+			command=lambda: self.button_callback(self.KeepSelection.RIGHT),
+			height=500,
+			width=500,
+			image=self.basic_img
+		)
 		self.r_label = Label(self.window, text="\n")
-		keep_button = Button(self.window, command=lambda: self.button_callback(self.KeepSelection.BOTH), text="KEEP\nBOTH")
-		delete_button = Button(self.window, command=lambda: self.button_callback(self.KeepSelection.NEITHER), text="DELETE\nBOTH")
+		keep_button = Button(
+			self.window,
+			command=lambda: self.button_callback(self.KeepSelection.BOTH),
+			text="KEEP\nBOTH"
+		)
+		delete_button = Button(
+			self.window,
+			command=lambda: self.button_callback(self.KeepSelection.NEITHER),
+			text="DELETE\nBOTH"
+		)
 
 		header.grid(row=0, column=0, columnspan=11)
 		self.l_button.grid(row=1, column=0, columnspan=5, sticky="NW")
@@ -188,9 +144,6 @@ class UserInterface:
 			if not left_hash:
 				self.image_map[identity_hash] = (right_image, right_hash)
 				return
-			with right_image.open("rb") as file:
-				data = file.read()
-			right_hash = sha256(data).hexdigest()
 			if left_hash == right_hash:
 				with PILImage.open(right_image) as r_img:
 					r_width, r_hight = r_img.size
@@ -224,85 +177,3 @@ class UserInterface:
 		with self.stdout_lock:
 			print(f"UI: {msg}")
 			stdout.flush()
-
-
-class DiscoveryWorker(Process):
-	IMAGE_EXTENSIONS = ("JPEG", "JPG", "PNG", "GIF", "TIFF", "RAW", "BMP", "WEBP", "SVG")
-
-	def __init__(
-		self,
-		directory_queue: "Queue[Path]",
-		duplicate_queue: "Queue[tuple[str, Path, Path, str]]",
-		image_map: "DictProxy[str, tuple[Path, str]]",
-		kill_flag: MultiprocessingEventType,
-		stdout_lock: LockType
-	) -> None:
-		Process.__init__(self)
-		self.directory_queue = directory_queue
-		self.duplicate_queue = duplicate_queue
-		self.image_map = image_map
-		self.kill_flag = kill_flag
-		self.stdout_lock = stdout_lock
-
-	def check_image(self, image_path: Path) -> None:
-		try:
-			with PILImage.open(image_path) as image:
-				r_width, r_hight = image.size
-				# identity_hash = str(average_hash(image))
-				# identity_hash = str(dhash(image))
-				identity_hash = str(phash(image))
-		except:
-			return
-		with image_path.open("rb") as file:
-			data = file.read()
-		image_hash = sha256(data).hexdigest()
-		mapped_path, mapped_hash = self.image_map.get(identity_hash, (Path(), ""))
-		if not mapped_hash:
-			self.image_map[identity_hash] = (image_path, image_hash)
-			return
-		if mapped_hash != image_hash:
-			self.write_to_stdout(f"Adding to queue: {image_path}")
-			self.duplicate_queue.put((identity_hash, mapped_path, image_path, image_hash))
-			return
-		with PILImage.open(str(mapped_path.resolve())) as l_img:
-			l_width, l_hight = l_img.size
-		if l_width * l_hight >= r_width * r_hight:
-			self.write_to_stdout(f"Removing {image_path}")
-			image_path.unlink()
-		else:
-			self.write_to_stdout(f"Removing {mapped_path}")
-			self.image_map[identity_hash] = (image_path, image_hash)
-			mapped_path.unlink()
-
-	def process_directories(self, directory: Path) -> None:
-		for child_path in directory.iterdir():
-			if self.kill_flag.is_set():
-				return
-			if child_path.is_dir():
-				self.directory_queue.put(child_path)
-			elif child_path.is_file() and child_path.suffix[1:].upper() in self.IMAGE_EXTENSIONS:
-				self.check_image(child_path)
-
-	def run(self) -> None:
-		self.write_to_stdout("Starting...")
-		empty_passes = 0
-		while not self.kill_flag.is_set():
-			try:
-				directory: Path = self.directory_queue.get(True, 1)
-				empty_passes = 0
-				self.write_to_stdout(f"Acquired {directory}")
-				self.process_directories(directory)
-			except Empty:
-				empty_passes += 1
-				if empty_passes >= 10:
-					break
-		self.write_to_stdout("Exiting...")
-
-	def write_to_stdout(self, msg: str) -> None:
-		with self.stdout_lock:
-			print(f"{self.pid}: {msg}")
-			stdout.flush()
-
-
-if __name__ == "__main__":
-	Main()
