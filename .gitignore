@@ -48,7 +48,6 @@ cover/
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
 
-
 # Environments
 .env
 .venv
@@ -66,3 +65,6 @@ dmypy.json
 # VSCode Workspace
 .vscode/
 *.code-workspace
+
+# Test files
+tests/testing-grounds/*
