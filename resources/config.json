@@ -1,0 +1,6 @@
+{
+	"logging": {
+		"level": "DEBUG",
+		"path": "logs/app.log"
+	}
+}

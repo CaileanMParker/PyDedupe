@@ -1,5 +1,11 @@
+from json import load
 from pathlib import Path
 from shutil import copytree
+
+
+BASE_DIRECTORY = Path(__file__).parent.parent
+with BASE_DIRECTORY.joinpath(r"resources/config.json").open("r") as config_file:
+	CONFIGS = load(config_file)
 
 
 def backup(path: Path) -> None:

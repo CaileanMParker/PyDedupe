@@ -1,0 +1,72 @@
+doc-warnings: true
+# ignore-paths:
+#   - dev_utils
+#   - hardware
+#   - nano
+#   - new_packages/tests
+#   - ref
+# ignore-patterns:
+#   - (^|/)tests(/|$)
+member-warnings: true
+output-format: vscode
+strictness: high
+test-warnings: false
+
+pylint:
+  run: true
+  disable:
+    - redefined-outer-name
+    - missing-final-newline
+    - too-many-lines
+    # - too-many-instance-attributes
+    - consider-using-from-import
+  options:
+    indent-string: \t
+
+pycodestyle:
+  run: true
+  disable:
+    - W191
+    - E116
+    - E122
+    - E123
+    - E124
+    - E126
+    - E128
+
+pyflakes:
+  run: true
+  disable:
+    - F401
+  #   - redefined-outer-name
+  #   - missing-final-newline
+  #   - too-many-instance-attributes
+
+mccabe:
+  run: true
+  # disable:
+  #   - C901
+
+dodgy:
+  run: true
+
+pydocstyle:
+  run: false
+
+bandit:
+  run: true
+  options:
+    config: .bandit.yaml
+
+mypy:
+  run: false
+  options:
+    follow-imports: silent
+    ignore-missing-imports: true
+    # show-column-numbers: true
+    # no-pretty: true
+
+vulture:
+  run: true
+  disable:
+    - unused-variable

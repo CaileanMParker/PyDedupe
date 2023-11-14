@@ -68,3 +68,6 @@ dmypy.json
 
 # Test files
 tests/testing-grounds/*
+
+# Logs
+logs/*

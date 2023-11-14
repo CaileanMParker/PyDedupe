@@ -1,15 +1,20 @@
 from enum import Enum
+from logging import getLogger
 from multiprocessing import Queue
 from multiprocessing.managers import DictProxy
-from multiprocessing.synchronize import Event as MultiprocessingEventType, Lock as LockType
+from multiprocessing.synchronize import Event as MultiprocessingEventType
 from pathlib import Path
 from PIL import Image as PILImage, ImageTk
 from queue import Empty
-from sys import stdout
 from threading import Thread
 from time import sleep
 from tkinter import *  # type: ignore
 from tkinter import filedialog, messagebox
+
+from utils import BASE_DIRECTORY
+
+
+log = getLogger()
 
 
 class UserInterface:
@@ -24,15 +29,13 @@ class UserInterface:
 		duplicate_queue: "Queue[tuple[str, Path, Path, str]]",
 		image_map: "DictProxy[str, tuple[Path, str]]",
 		discovery_complete_flag: MultiprocessingEventType,
-		kill_flag: MultiprocessingEventType,
-		stdout_lock: LockType
+		kill_flag: MultiprocessingEventType
 	) -> None:
-		self.blank_image = PILImage.open(Path(__file__).parent.parent / "resources/blank.jpg")
+		self.blank_image = PILImage.open(BASE_DIRECTORY.joinpath("resources/blank.jpg"))
 		self.duplicate_queue = duplicate_queue
 		self.image_map = image_map
 		self.discovery_complete_flag = discovery_complete_flag
 		self.kill_flag = kill_flag
-		self.stdout_lock = stdout_lock
 		self.target: tuple[str, Path, Path, str] = ("", Path(), Path(), "")
 		self.closed = False
 
@@ -80,6 +83,7 @@ class UserInterface:
 		keep_button.grid(row=1, column=5, sticky="N")
 		delete_button.grid(row=2, column=5, sticky="S")
 
+		log.debug("Waiting for user to select base directory...")
 		return Path(filedialog.askdirectory())
 
 	def button_callback(self, selection: KeepSelection) -> None:
@@ -89,15 +93,15 @@ class UserInterface:
 		if selection == self.KeepSelection.NEITHER:
 			if not messagebox.askyesno("Delete", "Are you sure you want to delete both images?"):
 				return
-			self.write_to_stdout(f"Removing {left_image} and {right_image}")
+			log.info("Removing %s and %s", left_image, right_image)
 			left_image.unlink()
 			right_image.unlink()
 			del self.image_map[identity_hash]
 		elif selection == self.KeepSelection.LEFT:
-			self.write_to_stdout(f"Removing {right_image}")
+			log.info("Removing %s", right_image)
 			right_image.unlink()
 		elif selection == self.KeepSelection.RIGHT:
-			self.write_to_stdout(f"Removing {left_image}")
+			log.info("Removing %s", left_image)
 			left_image.unlink()
 			self.image_map[identity_hash] = (right_image, right_hash)
 		self.l_button.configure(image=self.basic_img)
@@ -119,7 +123,7 @@ class UserInterface:
 				continue
 		while not self.kill_flag.is_set() and self.target[0]:
 			sleep(0.2)
-		self.write_to_stdout("Exiting...")
+		log.debug("Exiting...")
 		if not self.closed:
 			self.on_closing(True)
 
@@ -137,9 +141,9 @@ class UserInterface:
 		right_image: Path,
 		right_hash: str
 	) -> None:
-		self.write_to_stdout(f"Comparing {left_image} and {right_image}")
+		log.debug("Comparing %s and %s", left_image, right_image)
 		if not left_image.exists():
-			self.write_to_stdout(f"{left_image} no longer exists!")
+			log.debug(f"{left_image} no longer exists!")
 			left_image, left_hash = self.image_map.get(identity_hash, (Path(), ""))
 			if not left_hash:
 				self.image_map[identity_hash] = (right_image, right_hash)
@@ -150,10 +154,10 @@ class UserInterface:
 				with PILImage.open(str(left_image.resolve())) as l_img:
 					l_width, l_hight = l_img.size
 				if l_width * l_hight >= r_width * r_hight:
-					self.write_to_stdout(f"Removing {right_image}")
+					log.info("Removing %s", right_image)
 					right_image.unlink()
 				else:
-					self.write_to_stdout(f"Removing {left_image}")
+					log.info("Removing %s", left_image)
 					self.image_map[identity_hash] = (right_image, right_hash)
 					left_image.unlink()
 				return
@@ -172,8 +176,3 @@ class UserInterface:
 		self.duplicate_monitor = Thread(target=self.monitor_duplicates)
 		self.duplicate_monitor.start()
 		self.window.mainloop()
-
-	def write_to_stdout(self, msg: str) -> None:
-		with self.stdout_lock:
-			print(f"UI: {msg}")
-			stdout.flush()

@@ -1,13 +1,16 @@
 from hashlib import sha256
+from logging import getLogger
 from multiprocessing import Process, Queue
 from multiprocessing.managers import DictProxy
-from multiprocessing.synchronize import Event as MultiprocessingEventType, Lock as LockType
+from multiprocessing.synchronize import Event as MultiprocessingEventType
 from pathlib import Path
 from PIL import Image as PILImage
 from queue import Empty
-from sys import stdout
 
 from imagehash import average_hash, dhash, phash
+
+
+log = getLogger()
 
 
 class DiscoveryWorker(Process):
@@ -18,15 +21,13 @@ class DiscoveryWorker(Process):
 		directory_queue: "Queue[Path]",
 		duplicate_queue: "Queue[tuple[str, Path, Path, str]]",
 		image_map: "DictProxy[str, tuple[Path, str]]",
-		kill_flag: MultiprocessingEventType,
-		stdout_lock: LockType
+		kill_flag: MultiprocessingEventType
 	) -> None:
 		Process.__init__(self)
 		self.directory_queue = directory_queue
 		self.duplicate_queue = duplicate_queue
 		self.image_map = image_map
 		self.kill_flag = kill_flag
-		self.stdout_lock = stdout_lock
 
 	def check_image(self, image_path: Path) -> None:
 		try:
@@ -45,16 +46,16 @@ class DiscoveryWorker(Process):
 			self.image_map[identity_hash] = (image_path, image_hash)
 			return
 		if mapped_hash != image_hash:
-			self.write_to_stdout(f"Adding to queue: {image_path}")
+			log.debug("(%s) Adding to queue: %s", self.pid, image_path)
 			self.duplicate_queue.put((identity_hash, mapped_path, image_path, image_hash))
 			return
 		with PILImage.open(str(mapped_path.resolve())) as l_img:
 			l_width, l_hight = l_img.size
 		if l_width * l_hight >= r_width * r_hight:
-			self.write_to_stdout(f"Removing {image_path}")
+			log.info("(%s) Removing %s", self.pid, image_path)
 			image_path.unlink()
 		else:
-			self.write_to_stdout(f"Removing {mapped_path}")
+			log.info("(%s) Removing %s", self.pid, mapped_path)
 			self.image_map[identity_hash] = (image_path, image_hash)
 			mapped_path.unlink()
 
@@ -68,21 +69,16 @@ class DiscoveryWorker(Process):
 				self.check_image(child_path)
 
 	def run(self) -> None:
-		self.write_to_stdout("Starting...")
+		log.debug("(%s) Starting...", self.pid)
 		empty_passes = 0
 		while not self.kill_flag.is_set():
 			try:
 				directory: Path = self.directory_queue.get(True, 1)
 				empty_passes = 0
-				self.write_to_stdout(f"Acquired {directory}")
+				log.debug("(%s) Acquired %s", self.pid, directory)
 				self.process_directories(directory)
 			except Empty:
 				empty_passes += 1
 				if empty_passes >= 10:
 					break
-		self.write_to_stdout("Exiting...")
-
-	def write_to_stdout(self, msg: str) -> None:
-		with self.stdout_lock:
-			print(f"{self.pid}: {msg}")
-			stdout.flush()
+		log.debug("(%s) Exiting...", self.pid)
