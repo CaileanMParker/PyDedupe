@@ -33,14 +33,14 @@ class DiscoveryWorker(Process):
 		try:
 			with PILImage.open(image_path) as image:
 				r_width, r_hight = image.size
-				identity_hash = str(average_hash(image))
+				identity_hash = str(average_hash(image))  # comparative hash used to judge similarity to other images
 				# identity_hash = str(dhash(image))
 				# identity_hash = str(phash(image))
 		except:
 			return
 		with image_path.open("rb") as file:
 			data = file.read()
-		image_hash = sha256(data).hexdigest()
+		image_hash = sha256(data).hexdigest()  # strict hash used to identify equivalent images
 		mapped_path, mapped_hash = self.image_map.get(identity_hash, (Path(), ""))
 		if not mapped_hash:
 			self.image_map[identity_hash] = (image_path, image_hash)
