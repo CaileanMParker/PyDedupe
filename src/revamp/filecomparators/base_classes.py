@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from multiprocessing import Lock
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, NamedTuple, Self
 
 
 # Settled: discovery process will maintain master dict of file types and their corresponding file paths
@@ -14,9 +14,14 @@ from typing import Any, Self
 
 # It **IS** necessary to differentiate between exact and approximate comparisons. For example, an exact picture hash is file1.read() == file2.read(), but an approximate picture hash is a perceptual hash comparison, which can "match" even slightly different files on a threshold of 0. The same goes for text files, where an exact comparison is file1.read() == file2.read(), but an approximate comparison is a Levenshtein distance comparison.
 
+# Could exact match or same-file-type classes be allowed to specify multiple file types to avoid redundancy?
+
 # configs: overall threshold, file-type specific threshold, use only exact match, file-type specific exact match, skip hidden or system files (best guess), disable comparisons for specific file types, match only based on extension not magic identification, comparators to disable, root paths to search down, blacklisted paths, how to handle comparison consensus (i.e., if multiple comparators handle the same comparison set, which should run, and how many must return true to believe it?), where to house temp display directory, etc.
 
 # Have service to discover plugins and generate configs accordingly (such as being able to disable comparators)
+
+
+File = NamedTuple("File", [("path", Path), ("type", str)])
 
 
 class Singleton:
@@ -48,39 +53,40 @@ class IFileComparator(ABC):
 
     Abstract Class Properties
     -------------------------
-    exact: A boolean indicating whether the `compare` method this class offers
-        returns whether the input files match exactly or approximately
-    file_types: A 2-length tuple of stringw representing the types of files this
-        file class can compare, in the order the `compare` method expects them
+    file_types: A tuple of strings representing the types of files this
+    class can compare
 
     Abstract Methods
     ----------------
     compare: Compare two files and return whether they match
     """
 
-    @classproperty
-    @abstractmethod
-    def exact(cls) -> bool:  # pylint: disable=no-self-argument
-        """A boolean indicating whether the `compare` method this class offers
-        returns whether the input files match exactly or approximately
-        """
+    @classmethod
+    def __repr__(cls) -> str:
+        return f"{cls.__name__}(file_types={cls.file_types})"
 
     @classproperty
     @abstractmethod
-    def file_types(cls) -> tuple[str, str]:  # pylint: disable=no-self-argument
-        """A 2-length tuple of strings representing the types of files this
-        file class can compare, in the order the `compare` method expects them
+    def file_types(cls) -> tuple[str, ...]:  # pylint: disable=no-self-argument
+        """A tuple of strings representing the types of files this class can
+        compare
         """
 
     @staticmethod
     @abstractmethod
-    def compare(file1: Path, file2: Path, threshold: float = 0.0) -> bool:
+    def compare(
+        file1: File,
+        file2: File,
+        threshold: float = 0.0
+    ) -> bool:
         """Compare two files and return whether they match
 
         Parameters
         ----------
-        file1: The first file to compare, of type `file_types[0]`
-        file2: The second file to compare, of type `file_types[1]`
+        file1: A File object containing the path to and filetype of the first
+            file to compare
+        file2: A File object containing the path to and filetype of the second
+            file to compare
         threshold: The threshold to determine the files a match, if comparison
             is approximate
 
