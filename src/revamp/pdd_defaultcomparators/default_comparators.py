@@ -1,7 +1,7 @@
 from imagehash import average_hash
 from PIL import Image
 
-from base_classes import classproperty, File, IFileComparator  # type: ignore
+from .base_classes import classproperty, File, IFileComparator
 
 
 class ImageComparator(IFileComparator):
@@ -25,7 +25,6 @@ class ImageComparator(IFileComparator):
     ) -> bool:
         with Image.open(file1.path) as image1, Image.open(file2.path) as image2:
             diff = average_hash(image1) - average_hash(image2)
-        print(diff)
         return diff <= threshold
 
 
